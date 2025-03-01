@@ -171,52 +171,6 @@
             to { transform: translateX(0); opacity: 1; }
         }
 
-        .dialog-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.5);
-            display: none;
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-        }
-
-        .dialog {
-            background: white;
-            border-radius: 8px;
-            padding: 1.5rem;
-            width: 90%;
-            max-width: 500px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        }
-
-        .dialog-header {
-            margin-bottom: 1rem;
-        }
-
-        .dialog-content {
-            margin-bottom: 1.5rem;
-            color: var(--text-color-secondary);
-        }
-
-        .dialog-footer {
-            display: flex;
-            justify-content: flex-end;
-            gap: 1rem;
-        }
-
-        .button-secondary {
-            background-color: #e5e7eb;
-            color: var(--text-color);
-        }
-
-        .button-secondary:hover {
-            background-color: #d1d5db;
-        }
-
         .cancel-download {
             margin-left: 1rem;
             background-color: #ef4444;
@@ -224,11 +178,6 @@
 
         .cancel-download:hover {
             background-color: #dc2626;
-        }
-
-        .size-warning {
-            color: #f59e0b;
-            font-weight: 500;
         }
     </style>
 </head>
@@ -270,214 +219,135 @@
 
     <div id="toast" class="toast"></div>
 
-    <div id="confirmDialog" class="dialog-overlay">
-        <div class="dialog">
-            <div class="dialog-header">
-                <h2>确认下载</h2>
-            </div>
-            <div class="dialog-content">
-                <p>您确定要下载该 Docker 镜像吗？</p>
-                <p id="imageSize" class="size-warning"></p>
-            </div>
-            <div class="dialog-footer">
-                <button class="button button-secondary" onclick="closeDialog()">取消</button>
-                <button class="button" onclick="confirmDownload()">确认下载</button>
-            </div>
-        </div>
-    </div>
-
     <script>
-        let currentDownload = null;
-        let abortController = null;
+        // State management
+        const state = {
+            currentDownload: null,
+            abortController: null,
+            isDownloading: false
+        };
 
-        function showToast(message, type = 'success') {
-            const toast = document.getElementById('toast');
-            toast.textContent = message;
-            toast.className = `toast ${type}`;
-            toast.style.display = 'block';
-            setTimeout(() => {
-                toast.style.display = 'none';
-            }, 3000);
-        }
+        // UI Elements
+        const UI = {
+            imageName: document.getElementById('imageName'),
+            exportBtn: document.getElementById('exportBtn'),
+            cancelBtn: document.getElementById('cancelBtn'),
+            progressWrapper: document.getElementById('progressWrapper'),
+            progressValue: document.getElementById('progressValue'),
+            status: document.getElementById('status'),
+            toast: document.getElementById('toast')
+        };
 
-        function updateProgress(progress, status) {
-            const progressWrapper = document.getElementById('progressWrapper');
-            const progressValue = document.getElementById('progressValue');
-            const statusElement = document.getElementById('status');
+        // UI Utils
+        const UIUtils = {
+            showToast(message, type = 'success') {
+                UI.toast.textContent = message;
+                UI.toast.className = `toast ${type}`;
+                UI.toast.style.display = 'block';
+                setTimeout(() => {
+                    UI.toast.style.display = 'none';
+                }, 5000);
+            },
 
-            progressWrapper.classList.add('visible');
-            progressValue.style.width = `${progress}%`;
-            statusElement.textContent = status;
-        }
+            updateProgress(progress, status) {
+                UI.progressWrapper.classList.add('visible');
+                UI.progressValue.style.width = `${progress}%`;
+                UI.status.textContent = status;
+            },
 
-        async function showDialog(imageInfo) {
-            const dialog = document.getElementById('confirmDialog');
-            const sizeElement = document.getElementById('imageSize');
-            let sizeHtml = '';
+            resetUI() {
+                UI.progressWrapper.classList.remove('visible');
+                UI.exportBtn.disabled = false;
+                UI.cancelBtn.style.display = 'none';
+                UI.progressValue.style.width = '0%';
+                UI.status.textContent = '';
+            },
 
-            if (imageInfo) {
-                if (imageInfo.localExists) {
-                    sizeHtml = `本地镜像大小：${formatBytes(imageInfo.size)}<br>`;
-                    if (imageInfo.hubSize && imageInfo.hubSize !== imageInfo.size) {
-                        const sizeDiff = Math.abs(imageInfo.hubSize - imageInfo.size);
-                        const isLarger = imageInfo.hubSize > imageInfo.size;
-                        sizeHtml += `<span style="color: var(--text-color-secondary)">
-                            Docker Hub 镜像大小：${formatBytes(imageInfo.hubSize)}<br>
-                            <small>注意：远程镜像比本地${isLarger ? '大' : '小'} ${formatBytes(sizeDiff)}</small>
-                        </span><br>`;
+            handleError(error) {
+                console.error('Error:', error);
+                let message = error.message;
+
+                if (message.includes('Docker 服务未启动')) {
+                    message = 'Docker 服务未启动，请确保 Docker Desktop 正在运行，然后重试。';
+                } else if (message.includes('镜像不存在')) {
+                    message = '镜像不存在，请检查镜像名称是否正确。例如：nginx:latest, node:slim';
+                }
+
+                this.showToast(message, 'error');
+            }
+        };
+
+        // API calls
+        const API = {
+            async exportImage(imageName, autoPull = true) {
+                try {
+                    state.abortController = new AbortController();
+                    const response = await fetch('/api/docker/export', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ imageName, autoPull }),
+                        signal: state.abortController.signal
+                    });
+
+                    const contentType = response.headers.get('Content-Type');
+                    if (contentType?.includes('application/json')) {
+                        const data = await response.json();
+                        throw new Error(data.message || `导出失败: ${response.statusText}`);
                     }
-                } else {
-                    sizeHtml = `Docker Hub 镜像大小：${formatBytes(imageInfo.size)}<br>`;
-                    sizeHtml += `<span style="color: var(--text-color-secondary)">
-                        需要从 Docker Hub 下载<br>
-                        <small>注意：实际下载大小可能因压缩而小于显示大小</small>
-                    </span><br>`;
-                }
 
-                if (imageInfo.description) {
-                    sizeHtml += `<div style="margin-top: 0.5rem; font-size: 0.9em; color: var(--text-color-secondary)">
-                        ${imageInfo.description}
-                    </div>`;
+                    if (!response.ok) {
+                        throw new Error(`导出失败: ${response.statusText}`);
+                    }
+
+                    return response;
+                } catch (error) {
+                    if (error.name === 'AbortError') {
+                        throw error;
+                    }
+                    throw new Error(error.message || '导出失败，请重试');
                 }
-            } else {
-                sizeHtml = '无法获取镜像大小信息';
             }
+        };
 
-            sizeElement.innerHTML = sizeHtml;
-            dialog.style.display = 'flex';
-        }
-
-        function closeDialog() {
-            const dialog = document.getElementById('confirmDialog');
-            dialog.style.display = 'none';
-        }
-
-        async function getImageSize(imageName) {
-            try {
-                const response = await fetch('/api/docker/size', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ imageName })
-                });
-
-                if (!response.ok) {
-                    throw new Error('获取镜像大小失败');
-                }
-
-                const data = await response.json();
-                return data.size;
-            } catch (error) {
-                console.error('Failed to get image size:', error);
-                return null;
-            }
-        }
-
+        // Event handlers
         async function exportImage() {
-            const imageName = document.getElementById('imageName').value.trim();
+            const imageName = UI.imageName.value.trim();
             if (!imageName) {
-                showToast('请输入镜像名称', 'error');
+                UIUtils.showToast('请输入镜像名称', 'error');
                 return;
             }
 
+            UI.exportBtn.disabled = true;
             try {
-                const response = await fetch('/api/docker/size', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ imageName })
-                });
+                UIUtils.updateProgress(0, '正在准备下载...');
+                const response = await API.exportImage(imageName, true);
 
-                if (!response.ok) {
-                    throw new Error('获取镜像信息失败');
-                }
-
-                const imageInfo = await response.json();
-                showDialog(imageInfo);
-            } catch (error) {
-                console.error('Failed to get image info:', error);
-                showToast(error.message, 'error');
-            }
-        }
-
-        function cancelDownload() {
-            if (abortController) {
-                abortController.abort();
-                abortController = null;
-            }
-
-            const cancelBtn = document.getElementById('cancelBtn');
-            cancelBtn.style.display = 'none';
-
-            updateProgress(0, '下载已取消');
-            showToast('下载已取消', 'error');
-
-            const exportBtn = document.getElementById('exportBtn');
-            exportBtn.disabled = false;
-        }
-
-        async function confirmDownload() {
-            closeDialog();
-            const imageName = document.getElementById('imageName').value.trim();
-            const exportBtn = document.getElementById('exportBtn');
-            const cancelBtn = document.getElementById('cancelBtn');
-
-            exportBtn.disabled = true;
-
-            try {
-                updateProgress(0, '正在准备下载...');
-
-                abortController = new AbortController();
-                const response = await fetch('/api/docker/export', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        imageName,
-                        autoPull: true
-                    }),
-                    signal: abortController.signal
-                });
-
-                if (!response.ok) {
-                    throw new Error(`导出失败: ${response.statusText}`);
-                }
-
-                const contentLength = response.headers.get('Content-Length');
-                const fileName = response.headers.get('Content-Disposition')?.split('filename=')[1]?.replace(/"/g, '') ||
-                                `${imageName.replace(/[\/\:]/g, '_')}.tar`;
+                // 获取文件名
+                const fileName = response.headers.get('Content-Disposition')?.split('filename=')[1] || `${imageName.replace(/[\/\:]/g, '_')}.tar`;
 
                 const reader = response.body.getReader();
+                const contentLength = response.headers.get('Content-Length');
                 let receivedLength = 0;
                 const chunks = [];
 
-                // 显示取消按钮
-                cancelBtn.style.display = 'inline-flex';
+                UI.cancelBtn.style.display = 'inline-flex';
 
                 while(true) {
                     const {done, value} = await reader.read();
-
-                    if (done) {
-                        break;
-                    }
-
+                    if (done) break;
                     chunks.push(value);
                     receivedLength += value.length;
-
                     if (contentLength) {
                         const progress = (receivedLength / parseInt(contentLength) * 100).toFixed(0);
-                        updateProgress(progress, `已下载 ${formatBytes(receivedLength)} / ${formatBytes(parseInt(contentLength))}...`);
+                        UIUtils.updateProgress(progress, `已下载 ${progress}%`);
                     } else {
-                        updateProgress(50, `已下载 ${formatBytes(receivedLength)}...`);
+                        UIUtils.updateProgress(50, '正在下载...');
                     }
                 }
 
-                const blob = new Blob(chunks);
+                // 创建 Blob 并保存文件
+                const blob = new Blob(chunks, { type: 'application/x-tar' });
                 const url = URL.createObjectURL(blob);
-
                 const a = document.createElement('a');
                 a.href = url;
                 a.download = fileName;
@@ -486,15 +356,9 @@
                 document.body.removeChild(a);
                 URL.revokeObjectURL(url);
 
-                updateProgress(100, '下载完成');
-                showToast('镜像导出成功');
-                cancelBtn.style.display = 'none';
-
-                setTimeout(() => {
-                    const progressWrapper = document.getElementById('progressWrapper');
-                    progressWrapper.classList.remove('visible');
-                    exportBtn.disabled = false;
-                }, 2000);
+                UIUtils.updateProgress(100, '下载完成');
+                UIUtils.showToast('镜像导出成功');
+                setTimeout(() => UIUtils.resetUI(), 2000);
 
             } catch (error) {
                 if (error.name === 'AbortError') {
@@ -502,25 +366,21 @@
                     return;
                 }
 
-                console.error('Export error:', error);
-                showToast(error.message, 'error');
-                exportBtn.disabled = false;
-                cancelBtn.style.display = 'none';
-                updateProgress(0, '导出失败');
+                UIUtils.handleError(error);
+                UIUtils.resetUI();
+                UIUtils.updateProgress(0, '导出失败');
             }
         }
 
-        // 格式化字节大小的辅助函数
-        function formatBytes(bytes, decimals = 2) {
-            if (bytes === 0) return '0 Bytes';
+        function cancelDownload() {
+            if (state.abortController) {
+                state.abortController.abort();
+                state.abortController = null;
+            }
 
-            const k = 1024;
-            const dm = decimals < 0 ? 0 : decimals;
-            const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-
-            const i = Math.floor(Math.log(bytes) / Math.log(k));
-
-            return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+            UIUtils.resetUI();
+            UIUtils.updateProgress(0, '下载已取消');
+            UIUtils.showToast('下载已取消', 'error');
         }
     </script>
 </body>
