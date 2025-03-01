@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Docker 镜像导出</title>
+    <!-- 添加 PrimeVue 样式 -->
+    <link href="https://cdn.jsdelivr.net/npm/primevue@3/resources/themes/lara-light-blue/theme.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/primevue@3/resources/primevue.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/primeicons@6.0.1/primeicons.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #3B82F6;
+            --surface-ground: #F8F9FA;
+            --surface-section: #ffffff;
+            --surface-card: #ffffff;
+            --surface-border: #dfe7ef;
+            --text-color: #495057;
+            --text-color-secondary: #6c757d;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+
+        body {
+            background-color: var(--surface-ground);
+            color: var(--text-color);
+            padding: 2rem;
+        }
+
+        .layout-wrapper {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .card {
+            background: var(--surface-card);
+            padding: 2rem;
+            border-radius: 10px;
+            margin-bottom: 1rem;
+            box-shadow: 0 2px 1px -1px rgba(0,0,0,0.2), 0 1px 1px 0 rgba(0,0,0,0.14), 0 1px 3px 0 rgba(0,0,0,0.12);
+        }
+
+        .header {
+            margin-bottom: 2rem;
+        }
+
+        .header h1 {
+            color: var(--text-color);
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin: 0;
+        }
+
+        .header p {
+            color: var(--text-color-secondary);
+            margin: 0.5rem 0 0 0;
+        }
+
+        .form-group {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .input-wrapper {
+            flex: 1;
+            position: relative;
+        }
+
+        .input {
+            width: 100%;
+            padding: 1rem;
+            border: 1px solid var(--surface-border);
+            border-radius: 6px;
+            font-size: 1rem;
+            transition: all 0.2s;
+            outline: none;
+        }
+
+        .input:focus {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 2px rgba(59,130,246,0.1);
+        }
+
+        .button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem 2rem;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            min-width: 120px;
+        }
+
+        .button:hover {
+            background-color: #2563eb;
+        }
+
+        .button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .button i {
+            margin-right: 0.5rem;
+        }
+
+        .progress-wrapper {
+            margin-top: 1rem;
+            display: none;
+        }
+
+        .progress-wrapper.visible {
+            display: block;
+        }
+
+        .progress-bar {
+            height: 6px;
+            background-color: var(--surface-border);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .progress-value {
+            height: 100%;
+            background-color: var(--primary-color);
+            width: 0;
+            transition: width 0.3s;
+        }
+
+        .status {
+            margin-top: 0.5rem;
+            font-size: 0.875rem;
+            color: var(--text-color-secondary);
+        }
+
+        .toast {
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            padding: 1rem;
+            border-radius: 6px;
+            background: white;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            display: none;
+            animation: slideIn 0.3s ease;
+        }
+
+        .toast.success {
+            background: #DEF7EC;
+            color: #03543F;
+        }
+
+        .toast.error {
+            background: #FDE8E8;
+            color: #9B1C1C;
+        }
+
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        .dialog-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .dialog {
+            background: white;
+            border-radius: 8px;
+            padding: 1.5rem;
+            width: 90%;
+            max-width: 500px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .dialog-header {
+            margin-bottom: 1rem;
+        }
+
+        .dialog-content {
+            margin-bottom: 1.5rem;
+            color: var(--text-color-secondary);
+        }
+
+        .dialog-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 1rem;
+        }
+
+        .button-secondary {
+            background-color: #e5e7eb;
+            color: var(--text-color);
+        }
+
+        .button-secondary:hover {
+            background-color: #d1d5db;
+        }
+
+        .cancel-download {
+            margin-left: 1rem;
+            background-color: #ef4444;
+        }
+
+        .cancel-download:hover {
+            background-color: #dc2626;
+        }
+
+        .size-warning {
+            color: #f59e0b;
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+    <div class="layout-wrapper">
+        <div class="card">
+            <div class="header">
+                <h1>Docker 镜像导出工具</h1>
+                <p>输入镜像名称，一键导出为 tar 文件</p>
+            </div>
+
+            <div class="form-group">
+                <div class="input-wrapper">
+                    <input type="text"
+                           id="imageName"
+                           class="input"
+                           placeholder="输入镜像名称 (例如: node:slim, nginx:latest)">
+                </div>
+                <button id="exportBtn" class="button" onclick="exportImage()">
+                    <i class="pi pi-download"></i>
+                    导出镜像
+                </button>
+            </div>
+
+            <div id="progressWrapper" class="progress-wrapper">
+                <div class="progress-bar">
+                    <div id="progressValue" class="progress-value"></div>
+                </div>
+                <div class="status-row" style="display: flex; justify-content: space-between; align-items: center;">
+                    <div id="status" class="status"></div>
+                    <button id="cancelBtn" class="button cancel-download" onclick="cancelDownload()" style="display: none;">
+                        <i class="pi pi-times"></i>
+                        取消下载
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="toast"></div>
+
+    <div id="confirmDialog" class="dialog-overlay">
+        <div class="dialog">
+            <div class="dialog-header">
+                <h2>确认下载</h2>
+            </div>
+            <div class="dialog-content">
+                <p>您确定要下载该 Docker 镜像吗？</p>
+                <p id="imageSize" class="size-warning"></p>
+            </div>
+            <div class="dialog-footer">
+                <button class="button button-secondary" onclick="closeDialog()">取消</button>
+                <button class="button" onclick="confirmDownload()">确认下载</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentDownload = null;
+        let abortController = null;
+
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = `toast ${type}`;
+            toast.style.display = 'block';
+            setTimeout(() => {
+                toast.style.display = 'none';
+            }, 3000);
+        }
+
+        function updateProgress(progress, status) {
+            const progressWrapper = document.getElementById('progressWrapper');
+            const progressValue = document.getElementById('progressValue');
+            const statusElement = document.getElementById('status');
+
+            progressWrapper.classList.add('visible');
+            progressValue.style.width = `${progress}%`;
+            statusElement.textContent = status;
+        }
+
+        async function showDialog(imageInfo) {
+            const dialog = document.getElementById('confirmDialog');
+            const sizeElement = document.getElementById('imageSize');
+            let sizeHtml = '';
+
+            if (imageInfo) {
+                if (imageInfo.localExists) {
+                    sizeHtml = `本地镜像大小：${formatBytes(imageInfo.size)}<br>`;
+                    if (imageInfo.hubSize && imageInfo.hubSize !== imageInfo.size) {
+                        const sizeDiff = Math.abs(imageInfo.hubSize - imageInfo.size);
+                        const isLarger = imageInfo.hubSize > imageInfo.size;
+                        sizeHtml += `<span style="color: var(--text-color-secondary)">
+                            Docker Hub 镜像大小：${formatBytes(imageInfo.hubSize)}<br>
+                            <small>注意：远程镜像比本地${isLarger ? '大' : '小'} ${formatBytes(sizeDiff)}</small>
+                        </span><br>`;
+                    }
+                } else {
+                    sizeHtml = `Docker Hub 镜像大小：${formatBytes(imageInfo.size)}<br>`;
+                    sizeHtml += `<span style="color: var(--text-color-secondary)">
+                        需要从 Docker Hub 下载<br>
+                        <small>注意：实际下载大小可能因压缩而小于显示大小</small>
+                    </span><br>`;
+                }
+
+                if (imageInfo.description) {
+                    sizeHtml += `<div style="margin-top: 0.5rem; font-size: 0.9em; color: var(--text-color-secondary)">
+                        ${imageInfo.description}
+                    </div>`;
+                }
+            } else {
+                sizeHtml = '无法获取镜像大小信息';
+            }
+
+            sizeElement.innerHTML = sizeHtml;
+            dialog.style.display = 'flex';
+        }
+
+        function closeDialog() {
+            const dialog = document.getElementById('confirmDialog');
+            dialog.style.display = 'none';
+        }
+
+        async function getImageSize(imageName) {
+            try {
+                const response = await fetch('/api/docker/size', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ imageName })
+                });
+
+                if (!response.ok) {
+                    throw new Error('获取镜像大小失败');
+                }
+
+                const data = await response.json();
+                return data.size;
+            } catch (error) {
+                console.error('Failed to get image size:', error);
+                return null;
+            }
+        }
+
+        async function exportImage() {
+            const imageName = document.getElementById('imageName').value.trim();
+            if (!imageName) {
+                showToast('请输入镜像名称', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/docker/size', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ imageName })
+                });
+
+                if (!response.ok) {
+                    throw new Error('获取镜像信息失败');
+                }
+
+                const imageInfo = await response.json();
+                showDialog(imageInfo);
+            } catch (error) {
+                console.error('Failed to get image info:', error);
+                showToast(error.message, 'error');
+            }
+        }
+
+        function cancelDownload() {
+            if (abortController) {
+                abortController.abort();
+                abortController = null;
+            }
+
+            const cancelBtn = document.getElementById('cancelBtn');
+            cancelBtn.style.display = 'none';
+
+            updateProgress(0, '下载已取消');
+            showToast('下载已取消', 'error');
+
+            const exportBtn = document.getElementById('exportBtn');
+            exportBtn.disabled = false;
+        }
+
+        async function confirmDownload() {
+            closeDialog();
+            const imageName = document.getElementById('imageName').value.trim();
+            const exportBtn = document.getElementById('exportBtn');
+            const cancelBtn = document.getElementById('cancelBtn');
+
+            exportBtn.disabled = true;
+
+            try {
+                updateProgress(0, '正在准备下载...');
+
+                abortController = new AbortController();
+                const response = await fetch('/api/docker/export', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        imageName,
+                        autoPull: true
+                    }),
+                    signal: abortController.signal
+                });
+
+                if (!response.ok) {
+                    throw new Error(`导出失败: ${response.statusText}`);
+                }
+
+                const contentLength = response.headers.get('Content-Length');
+                const fileName = response.headers.get('Content-Disposition')?.split('filename=')[1]?.replace(/"/g, '') ||
+                                `${imageName.replace(/[\/\:]/g, '_')}.tar`;
+
+                const reader = response.body.getReader();
+                let receivedLength = 0;
+                const chunks = [];
+
+                // 显示取消按钮
+                cancelBtn.style.display = 'inline-flex';
+
+                while(true) {
+                    const {done, value} = await reader.read();
+
+                    if (done) {
+                        break;
+                    }
+
+                    chunks.push(value);
+                    receivedLength += value.length;
+
+                    if (contentLength) {
+                        const progress = (receivedLength / parseInt(contentLength) * 100).toFixed(0);
+                        updateProgress(progress, `已下载 ${formatBytes(receivedLength)} / ${formatBytes(parseInt(contentLength))}...`);
+                    } else {
+                        updateProgress(50, `已下载 ${formatBytes(receivedLength)}...`);
+                    }
+                }
+
+                const blob = new Blob(chunks);
+                const url = URL.createObjectURL(blob);
+
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = fileName;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+
+                updateProgress(100, '下载完成');
+                showToast('镜像导出成功');
+                cancelBtn.style.display = 'none';
+
+                setTimeout(() => {
+                    const progressWrapper = document.getElementById('progressWrapper');
+                    progressWrapper.classList.remove('visible');
+                    exportBtn.disabled = false;
+                }, 2000);
+
+            } catch (error) {
+                if (error.name === 'AbortError') {
+                    console.log('Download cancelled');
+                    return;
+                }
+
+                console.error('Export error:', error);
+                showToast(error.message, 'error');
+                exportBtn.disabled = false;
+                cancelBtn.style.display = 'none';
+                updateProgress(0, '导出失败');
+            }
+        }
+
+        // 格式化字节大小的辅助函数
+        function formatBytes(bytes, decimals = 2) {
+            if (bytes === 0) return '0 Bytes';
+
+            const k = 1024;
+            const dm = decimals < 0 ? 0 : decimals;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+        }
+    </script>
+</body>
+</html>
